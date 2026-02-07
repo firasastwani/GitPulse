@@ -57,9 +57,14 @@ type apiError struct {
 
 // callClaude sends a prompt to the Claude API and returns the text response.
 func (c *Client) callClaude(prompt string) (string, error) {
+	return c.callClaudeWithTokens(prompt, 1024)
+}
+
+// callClaudeWithTokens sends a prompt with a custom max_tokens limit.
+func (c *Client) callClaudeWithTokens(prompt string, maxTokens int) (string, error) {
 	reqBody := anthropicRequest{
 		Model:     c.model,
-		MaxTokens: 1024,
+		MaxTokens: maxTokens,
 		Messages: []message{
 			{Role: "user", Content: prompt},
 		},
@@ -167,12 +172,51 @@ func (c *Client) RefineAndCommit(groups []grouper.FileGroup) ([]grouper.FileGrou
 		return groups, nil
 	}
 
+	// Build file -> diff lookup from original groups so diffs survive refinement
+	// Parse the original diffs to extract per-file diff sections
+	fileDiffs := make(map[string]string)
+	for _, g := range groups {
+		if len(g.Files) == 1 {
+			// Single file group: entire diff belongs to that file
+			fileDiffs[g.Files[0]] = g.Diffs
+		} else {
+			// Multiple files: split diff by file headers
+			diffSections := strings.Split(g.Diffs, "diff --git")
+			for _, section := range diffSections {
+				if section == "" {
+					continue
+				}
+				section = "diff --git" + section
+				// Extract filename from diff header
+				for _, f := range g.Files {
+					if strings.Contains(section, " a/"+f+" ") || strings.Contains(section, " b/"+f+" ") {
+						fileDiffs[f] = section
+						break
+					}
+				}
+			}
+		}
+	}
+
 	refinedGroups := make([]grouper.FileGroup, len(refined))
 	for i, r := range refined {
+		// Reconstruct diffs for the refined group from original per-file diffs
+		var combinedDiffs strings.Builder
+		for _, f := range r.Files {
+			if d, ok := fileDiffs[f]; ok {
+				combinedDiffs.WriteString(d)
+			}
+		}
+		var combinedDiffsStr string
+		if combinedDiffs.Len() > 0 {
+			combinedDiffsStr = combinedDiffs.String()
+		}
+
 		refinedGroups[i] = grouper.FileGroup{
 			Files:         r.Files,
 			Reason:        r.Reason,
 			CommitMessage: r.CommitMessage,
+			Diffs:         combinedDiffs,
 		}
 	}
 
@@ -220,9 +264,3 @@ func (c *Client) GenerateCommitMessage(diff string, files []string) (string, err
 }
 
 
-
-
-func wrongSyntax... (s string, ) {
-
-	broken code example here
-}
