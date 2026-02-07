@@ -2,6 +2,8 @@ package engine
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +17,9 @@ import (
 	"github.com/firasastwani/gitpulse/internal/watcher"
 )
 
+// how many time
+const maxReviewIterations = 3
+
 // Engine orchestrates the full GitPulse pipeline:
 // watcher buffers changes -> user triggers `gitpulse push` OR safety timer fires
 type Engine struct {
@@ -25,6 +30,10 @@ type Engine struct {
 	ai      *ai.Client
 	store   *store.Store
 	done    chan struct{}
+
+	// Interactive controls whether the engine can prompt the user.
+	// Set to true in daemon mode (user at terminal), false for safety timer auto-flush.
+	Interactive bool
 
 	// pending changes buffer (protected by mu)
 	mu      sync.Mutex
@@ -214,6 +223,28 @@ func (e *Engine) processChanges(changeset watcher.ChangeSet) {
 	}
 	e.logger.GroupInfo(len(refined), displays)
 
+	// 3.5 AI Code Review — hold push if blockers found
+	if e.cfg.AI.CodeReview {
+		if e.Interactive {
+			refined = e.reviewLoop(refined)
+		} else {
+			// Non-interactive (safety timer): review but only log, don't block
+			reviewResult, err := e.ai.ReviewCode(refined)
+			if err != nil {
+				e.logger.Warn("AI review failed, proceeding without review", "err", err)
+			} else if reviewResult.HasBlockers {
+				e.logger.Warn("AI review found blockers but running non-interactively, proceeding anyway",
+					"issues", len(reviewResult.Findings))
+				e.logger.ReviewFindings(reviewResult.Findings)
+			} else if len(reviewResult.Findings) > 0 {
+				e.logger.Info("AI review passed with info-only findings", "issues", len(reviewResult.Findings))
+				e.logger.ReviewFindings(reviewResult.Findings)
+			} else {
+				e.logger.Info("AI review passed — no issues found")
+			}
+		}
+	}
+
 	// 4. Reset staging, then stage + commit per group
 	if err := e.git.ResetStaging(); err != nil {
 		e.logger.Error("Failed to reset staging", err)
@@ -255,5 +286,125 @@ func (e *Engine) processChanges(changeset watcher.ChangeSet) {
 			return
 		}
 		e.logger.PushSuccess(commitCount, e.cfg.Remote)
+	}
+}
+
+// reviewLoop runs the interactive review cycle: review -> prompt -> fix -> re-review.
+// Caps at maxReviewIterations to prevent infinite loops.
+// Returns the (possibly updated) groups to proceed with.
+func (e *Engine) reviewLoop(groups []grouper.FileGroup) []grouper.FileGroup {
+	for iteration := 0; iteration < maxReviewIterations; iteration++ {
+		reviewResult, err := e.ai.ReviewCode(groups)
+		if err != nil {
+			e.logger.Warn("AI review failed, proceeding without review", "err", err)
+			return groups
+		}
+
+		if len(reviewResult.Findings) == 0 {
+			e.logger.Info("AI review passed — no issues found")
+			return groups
+		}
+
+		// Display findings
+		e.logger.ReviewFindings(reviewResult.Findings)
+
+		if !reviewResult.HasBlockers {
+			e.logger.Info("All findings are info-only, proceeding with push")
+			return groups
+		}
+
+		// Prompt user for action
+		action, err := e.handleReviewFindings(groups, reviewResult)
+		if err != nil {
+			e.logger.Warn("Review prompt failed, proceeding with push", "err", err)
+			return groups
+		}
+
+		if action == "continue" {
+			e.logger.Info("User chose to continue — proceeding with push")
+			return groups
+		}
+
+		// Re-fetch diffs after fix (manual or AI) for the next iteration
+		for i := range groups {
+			groups[i].Diffs = ""
+			for _, f := range groups[i].Files {
+				d, err := e.git.GetFileDiff(f)
+				if err != nil {
+					d = fmt.Sprintf("--- /dev/null\n+++ b/%s\n(new or deleted file)", f)
+				}
+				groups[i].Diffs += d + "\n"
+			}
+		}
+
+		e.logger.Info("Re-reviewing after fix...", "iteration", iteration+2)
+	}
+
+	e.logger.Warn("Max review iterations reached, proceeding with push")
+	return groups
+}
+
+// handleReviewFindings prompts the user and executes the chosen action.
+// Returns the action string ("manual", "aifix", "continue") and any error.
+func (e *Engine) handleReviewFindings(groups []grouper.FileGroup, result *ai.ReviewResult) (string, error) {
+	action, err := e.logger.PromptReviewAction()
+	if err != nil {
+		return "continue", err
+	}
+
+	switch action {
+	case "manual":
+		if err := e.logger.WaitForManualFix(); err != nil {
+			return "continue", err
+		}
+
+	case "aifix":
+		e.applyAIFixes(result.Findings)
+	}
+
+	return action, nil
+}
+
+// applyAIFixes iterates through blocking findings and applies AI-generated fixes.
+func (e *Engine) applyAIFixes(findings []ai.ReviewFinding) {
+	for _, finding := range findings {
+		// Only fix blockers
+		if finding.Severity != ai.SeverityError && finding.Severity != ai.SeverityWarning {
+			continue
+		}
+
+		// Read the primary file content
+		absPath := filepath.Join(e.cfg.WatchPath, finding.File)
+		primaryBytes, err := os.ReadFile(absPath)
+		if err != nil {
+			e.logger.Warn("Could not read file for AI fix", "file", finding.File, "err", err)
+			continue
+		}
+
+		// Read related file contents for cross-file context
+		relatedContents := make(map[string]string)
+		for _, loc := range finding.RelatedLocations {
+			relPath := filepath.Join(e.cfg.WatchPath, loc.File)
+			relBytes, err := os.ReadFile(relPath)
+			if err != nil {
+				continue // skip related files we can't read
+			}
+			relatedContents[loc.File] = string(relBytes)
+		}
+
+		// Ask AI to generate the fix
+		fixed, err := e.ai.GenerateFix(finding.File, finding, string(primaryBytes), relatedContents)
+		if err != nil {
+			e.logger.Warn("AI fix generation failed", "file", finding.File, "err", err)
+			continue
+		}
+
+		// Write the fix back to disk
+		if err := os.WriteFile(absPath, []byte(fixed), 0644); err != nil {
+			e.logger.Warn("Failed to write AI fix", "file", finding.File, "err", err)
+			continue
+		}
+
+		e.logger.AIFixApplied(finding.File, finding.Description)
 	}
 }
