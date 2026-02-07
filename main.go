@@ -2,7 +2,10 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -10,7 +13,9 @@ import (
 	"syscall"
 
 	"github.com/firasastwani/gitpulse/internal/config"
+	"github.com/firasastwani/gitpulse/internal/dashboard"
 	"github.com/firasastwani/gitpulse/internal/engine"
+	"github.com/firasastwani/gitpulse/internal/store"
 	"github.com/firasastwani/gitpulse/internal/ui"
 )
 
@@ -20,6 +25,12 @@ func main() {
 	// If the user runs `gitpulse push`, signal the running daemon and exit
 	if len(os.Args) > 1 && os.Args[1] == "push" {
 		pushCmd()
+		return
+	}
+
+	// If the user runs `gitpulse dashboard`, serve the Effects Dashboard
+	if len(os.Args) > 1 && os.Args[1] == "dashboard" {
+		dashboardCmd()
 		return
 	}
 
@@ -117,6 +128,32 @@ func pushCmd() {
 	}
 
 	fmt.Printf("Sent push signal to GitPulse daemon (PID %d)\n", pid)
+}
+
+func dashboardCmd() {
+	fs := flag.NewFlagSet("dashboard", flag.ExitOnError)
+	port := fs.String("port", "8080", "HTTP server port")
+	_ = fs.Parse(os.Args[2:])
+
+	cfg, err := config.Load("config.yaml")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
+		os.Exit(1)
+	}
+
+	historyPath := filepath.Join(cfg.WatchPath, ".gitpulse", "history.json")
+	s, err := store.New(historyPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to open history: %v\n", err)
+		os.Exit(1)
+	}
+
+	svr := dashboard.NewServer(s, historyPath)
+	addr := ":" + *port
+	fmt.Printf("GitPulse Effects Dashboard at http://localhost%s\n", addr)
+	if err := http.ListenAndServe(addr, svr.Handler()); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func writePID() {
