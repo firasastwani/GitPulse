@@ -1,6 +1,9 @@
 package watcher
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -16,21 +19,23 @@ const (
 	Renamed
 )
 
+// test change comment
+
 // FileChange represents a single file change event.
 type FileChange struct {
 	Path string
 	Type ChangeType
 }
 
-// ChangeSet represents a debounced(does after a period of inactivity) batch of file changes.
+// ChangeSet represents a debounced batch of file changes.
 type ChangeSet struct {
 	Files     []FileChange
 	Timestamp time.Time
 }
 
-// Watcher monitors a directory for file changes and emits debounced ChangeSets.
+// Watcher monitors a directory tree for file changes and emits debounced ChangeSets.
 type Watcher struct {
-	path           string
+	root           string
 	debounceDelay  time.Duration
 	ignorePatterns []string
 	events         chan ChangeSet
@@ -38,10 +43,10 @@ type Watcher struct {
 }
 
 // New creates a new Watcher for the given path.
-func New(path string, debounceSeconds int, ignorePatterns []string) (*Watcher, error) {
-	// TODO: Initialize fsnotify watcher, set up debounce timer
+// debounceSeconds controls how long to batch raw fsnotify events (keep short, ~2s).
+func New(root string, debounceSeconds int, ignorePatterns []string) (*Watcher, error) {
 	return &Watcher{
-		path:           path,
+		root:           root,
 		debounceDelay:  time.Duration(debounceSeconds) * time.Second,
 		ignorePatterns: ignorePatterns,
 		events:         make(chan ChangeSet, 10),
@@ -54,42 +59,57 @@ func (w *Watcher) Events() <-chan ChangeSet {
 	return w.events
 }
 
-// Start begins watching for file changes.
+// Start begins watching the directory tree recursively for file changes.
 func (w *Watcher) Start() error {
-
-	// create a new watcher
 	fsWatcher, err := fsnotify.NewWatcher()
-
 	if err != nil {
 		return err
 	}
 
-	err = fsWatcher.Add(w.path)
-
+	// Walk directory tree, watch every subdirectory that isn't ignored
+	err = filepath.Walk(w.root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			if w.shouldIgnore(path) {
+				return filepath.SkipDir
+			}
+			return fsWatcher.Add(path)
+		}
+		return nil
+	})
 	if err != nil {
 		fsWatcher.Close()
 		return err
 	}
 
 	go func() {
-
 		defer fsWatcher.Close()
 
-		// changes
 		var pending []FileChange
-		// debounce increment
 		var timer *time.Timer
 
 		for {
 			select {
 			case event, ok := <-fsWatcher.Events:
-
 				if !ok {
 					return
 				}
 
-				var changeType ChangeType
+				if w.shouldIgnore(event.Name) {
+					continue
+				}
 
+				// Auto-watch newly created directories
+				if event.Has(fsnotify.Create) {
+					if info, err := os.Stat(event.Name); err == nil && info.IsDir() {
+						_ = fsWatcher.Add(event.Name)
+						continue
+					}
+				}
+
+				var changeType ChangeType
 				switch {
 				case event.Has(fsnotify.Create):
 					changeType = Created
@@ -103,24 +123,30 @@ func (w *Watcher) Start() error {
 					continue
 				}
 
+				// Store relative path
+				relPath, err := filepath.Rel(w.root, event.Name)
+				if err != nil {
+					relPath = event.Name
+				}
+
 				pending = append(pending, FileChange{
-					Path: event.Name,
+					Path: relPath,
 					Type: changeType,
 				})
 
+				// Short debounce — just batches rapid saves, not the pipeline trigger
 				if timer != nil {
 					timer.Stop()
 				}
-
-				// capture snapshot to avoid data race — AfterFunc runs on another goroutine
 				snapshot := make([]FileChange, len(pending))
 				copy(snapshot, pending)
 
-				timer = time.AfterFunc(w.debounceDelay, func() {
+				timer = time.AfterFunc(2*time.Second, func() {
 					w.events <- ChangeSet{
 						Files:     snapshot,
 						Timestamp: time.Now(),
 					}
+					pending = nil
 				})
 
 			case _, ok := <-fsWatcher.Errors:
@@ -140,7 +166,22 @@ func (w *Watcher) Start() error {
 	return nil
 }
 
-// Stop shuts down the watcher (ctrl c)
+// shouldIgnore checks if a path matches any configured ignore patterns.
+func (w *Watcher) shouldIgnore(path string) bool {
+	base := filepath.Base(path)
+	for _, pattern := range w.ignorePatterns {
+		pattern = strings.TrimSuffix(pattern, "/")
+		if base == pattern {
+			return true
+		}
+		if matched, _ := filepath.Match(pattern, base); matched {
+			return true
+		}
+	}
+	return false
+}
+
+// Stop shuts down the watcher.
 func (w *Watcher) Stop() {
 	close(w.done)
 }
