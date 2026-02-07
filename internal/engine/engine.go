@@ -58,7 +58,8 @@ func New(cfg *config.Config, logger *ui.Logger) (*Engine, error) {
 
 	aiClient := ai.NewClient(cfg.AI.APIKey, cfg.AI.Model)
 
-	s, err := store.New("")
+	historyPath := filepath.Join(cfg.WatchPath, ".gitpulse", "history.json")
+	s, err := store.New(historyPath)
 	if err != nil {
 		return nil, err
 	}
@@ -540,3 +541,4 @@ func (e *Engine) applyAIFixes(findings []ai.ReviewFinding) {
 		e.logger.AIFixApplied(finding.File, finding.Description)
 	}
 }
+

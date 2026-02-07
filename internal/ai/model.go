@@ -258,7 +258,3 @@ func (c *Client) GenerateCommitMessage(diff string, files []string) (string, err
 	return msg, nil
 }
 
-
-// testing new history tracking json abilities
-
-// just a comment

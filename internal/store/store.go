@@ -213,5 +213,3 @@ func (s *Store) flush() error {
 	}
 	return os.WriteFile(s.path, data, 0644)
 }
-
-// testing new file storage location + history generation 
