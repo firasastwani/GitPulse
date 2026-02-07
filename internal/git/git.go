@@ -101,42 +101,26 @@ func (m *Manager) GetStagedDiff() (string, error) {
 	return strings.Join(diffs, "\n"), nil
 }
 
-// GetFileDiff returns the diff for a specific file (staged or unstaged).
+// GetFileDiff returns the real unified diff for a specific file against HEAD.
+// Shells out to `git diff` to get actual +/- line content that Claude can review.
 func (m *Manager) GetFileDiff(path string) (string, error) {
-
-	head, err := m.repo.Head()
-
-	if err != nil {
-		return "", fmt.Errorf("failed to get head: %w", err)
+	// Try diffing against HEAD (for tracked, modified files)
+	cmd := exec.Command("git", "diff", "HEAD", "--", path)
+	cmd.Dir = m.repoPath
+	output, err := cmd.Output()
+	if err == nil && len(output) > 0 {
+		return string(output), nil
 	}
 
-	commitObj, err := m.repo.CommitObject(head.Hash())
-
-	if err != nil {
-		return "", fmt.Errorf("failed to get head commit: %w", err)
+	// File might be untracked (new) — diff against /dev/null
+	cmd = exec.Command("git", "diff", "--no-index", "/dev/null", path)
+	cmd.Dir = m.repoPath
+	output, _ = cmd.Output()
+	if len(output) > 0 {
+		return string(output), nil
 	}
 
-	headTree, err := commitObj.Tree()
-
-	if err != nil {
-		return "", fmt.Errorf("failed to get head tree: %w", err)
-	}
-
-	// get file from head tree
-
-	headFile, err := headTree.File(path)
-	if err != nil {
-		// file is new, not in head. returns empty old content (entire file is the diff)
-		return fmt.Sprintf("--- /dev/null\n+++ b/%s\n(new file)", path), nil
-	}
-
-	oldContent, err := headFile.Contents()
-	if err != nil {
-		return "", fmt.Errorf("failed to read HEAD version of %s: %w", path, err)
-	}
-
-	return fmt.Sprintf("--- a/%s\n+++ b/%s\n(diff content for %s, old size: %d bytes)",
-		path, path, path, len(oldContent)), nil
+	return fmt.Sprintf("--- /dev/null\n+++ b/%s\n(new file)", path), nil
 }
 
 // Commit creates a new commit with the given message.

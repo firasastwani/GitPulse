@@ -30,7 +30,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger := ui.New()
+	// Single stdin reader — shared between main loop and interactive review prompts
+	stdinCh := make(chan string, 1)
+	go func() {
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			stdinCh <- scanner.Text()
+		}
+		close(stdinCh)
+	}()
+
+	logger := ui.New(stdinCh)
 	logger.Info("GitPulse starting", "path", cfg.WatchPath, "branch", cfg.Branch)
 
 	eng, err := engine.New(cfg, logger)
@@ -56,15 +66,6 @@ func main() {
 
 	// Start the engine (watches + buffers changes)
 	go eng.Run()
-
-	// Listen for Enter key in the same terminal to trigger push
-	stdinCh := make(chan struct{})
-	go func() {
-		scanner := bufio.NewScanner(os.Stdin)
-		for scanner.Scan() {
-			stdinCh <- struct{}{}
-		}
-	}()
 
 	logger.Info("Press ENTER to commit & push (or Ctrl+C to quit)")
 

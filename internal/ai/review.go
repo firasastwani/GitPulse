@@ -112,14 +112,20 @@ func (c *Client) ReviewCode(groups []grouper.FileGroup) (*ReviewResult, error) {
 	return result, nil
 }
 
-// GenerateFix sends a file's current content, a review finding, and related
-// file contents to Claude, asking it to produce corrected file content.
+// fixPatch is the JSON response format for targeted code fixes.
+type fixPatch struct {
+	OldCode string `json:"old_code"` // exact lines to find and replace
+	NewCode string `json:"new_code"` // corrected replacement lines
+}
+
+// GenerateFix sends a file's current content and a review finding to Claude,
+// asking it to produce a targeted patch (old_code -> new_code) rather than
+// rewriting the entire file. This avoids truncation issues with large files.
 //
 // primaryContent is the content of the file where the main issue lives.
 // relatedContents maps file paths to their content for cross-file context.
 //
-// Returns the full corrected primary file content as a string, ready to be
-// written back to disk.
+// Returns the full file content with the patch applied, ready to write to disk.
 func (c *Client) GenerateFix(filePath string, finding ReviewFinding, primaryContent string, relatedContents map[string]string) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("You are a code fixer. A code review found the following issue:\n\n")
@@ -129,7 +135,7 @@ func (c *Client) GenerateFix(filePath string, finding ReviewFinding, primaryCont
 	sb.WriteString(fmt.Sprintf("Problem: %s\n", finding.Description))
 	sb.WriteString(fmt.Sprintf("Suggestion: %s\n\n", finding.Suggestion))
 
-	sb.WriteString(fmt.Sprintf("Here is the primary file content (%s):\n\n```\n%s\n```\n\n", filePath, primaryContent))
+	sb.WriteString(fmt.Sprintf("Here is the file content (%s):\n\n```\n%s\n```\n\n", filePath, primaryContent))
 
 	// Include related file contents for cross-file context
 	if len(finding.RelatedLocations) > 0 && len(relatedContents) > 0 {
@@ -142,22 +148,36 @@ func (c *Client) GenerateFix(filePath string, finding ReviewFinding, primaryCont
 		}
 	}
 
-	sb.WriteString("Return the COMPLETE corrected content for the primary file with the issue fixed.\n")
-	sb.WriteString("Respond with ONLY the file content, no explanations, no markdown fences.\n")
-	sb.WriteString("Do not change anything else besides fixing the identified issue.")
+	sb.WriteString("Return a targeted fix as JSON. Do NOT return the entire file.\n")
+	sb.WriteString("old_code must be the EXACT lines from the file that need to change (copy them exactly, including whitespace).\n")
+	sb.WriteString("new_code is the corrected replacement.\n")
+	sb.WriteString("If the fix is to DELETE code, set new_code to an empty string.\n\n")
+	sb.WriteString("Respond with ONLY valid JSON in this exact format:\n")
+	sb.WriteString(`{"old_code":"exact lines to replace","new_code":"corrected lines"}`)
+	sb.WriteString("\n")
 
-	fixed, err := c.callClaude(sb.String())
+	text, err := c.callClaudeWithTokens(sb.String(), 2048)
 	if err != nil {
 		return "", fmt.Errorf("fix generation failed for %s: %w", filePath, err)
 	}
 
-	// Claude sometimes wraps the response in code fences despite instructions
-	fixed = stripCodeFences(fixed)
+	text = stripCodeFences(text)
 
-	if strings.TrimSpace(fixed) == "" {
-		return "", fmt.Errorf("AI returned empty fix for %s", filePath)
+	var patch fixPatch
+	if err := json.Unmarshal([]byte(text), &patch); err != nil {
+		return "", fmt.Errorf("failed to parse fix patch for %s: %w (raw: %s)", filePath, err, truncate(text, 200))
 	}
 
+	if patch.OldCode == "" {
+		return "", fmt.Errorf("AI returned empty old_code for %s — cannot apply patch", filePath)
+	}
+
+	// Apply the patch via string replacement
+	if !strings.Contains(primaryContent, patch.OldCode) {
+		return "", fmt.Errorf("old_code not found in %s — patch cannot be applied", filePath)
+	}
+
+	fixed := strings.Replace(primaryContent, patch.OldCode, patch.NewCode, 1)
 	return fixed, nil
 }
 
@@ -179,9 +199,3 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen] + "..."
 }
 
-// example creating an error
-
-func wrongSyntax... (s string, ) {
-
-	broken code example here
-}

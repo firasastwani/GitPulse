@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -22,20 +21,22 @@ const (
 
 // Logger wraps charmbracelet/log for styled GitPulse output.
 type Logger struct {
-	logger *log.Logger
-	reader *bufio.Reader
+	logger  *log.Logger
+	stdinCh <-chan string // shared channel for all stdin reads
 }
 
 // New creates a new styled Logger.
-func New() *Logger {
+// stdinCh should be a channel fed by a single goroutine reading lines from os.Stdin.
+// Pass nil if no interactive input is needed (e.g., non-interactive mode).
+func New(stdinCh <-chan string) *Logger {
 	l := log.NewWithOptions(os.Stdout, log.Options{
 		ReportTimestamp: true,
 		TimeFormat:      "15:04:05",
 	})
 
 	return &Logger{
-		logger: l,
-		reader: bufio.NewReader(os.Stdin),
+		logger:  l,
+		stdinCh: stdinCh,
 	}
 }
 
@@ -156,9 +157,9 @@ func (l *Logger) PromptReviewAction() (string, error) {
 	fmt.Println("    [3] Continue anyway (push with current code)")
 	fmt.Print("\n  Choice [1/2/3]: ")
 
-	input, err := l.reader.ReadString('\n')
-	if err != nil {
-		return "", fmt.Errorf("failed to read input: %w", err)
+	input, ok := <-l.stdinCh
+	if !ok {
+		return "continue", fmt.Errorf("stdin channel closed")
 	}
 
 	switch strings.TrimSpace(input) {
@@ -179,9 +180,9 @@ func (l *Logger) PromptReviewAction() (string, error) {
 func (l *Logger) WaitForManualFix() error {
 	fmt.Println()
 	l.logger.Info("Fix the issues in your editor, then press ENTER to re-review...")
-	_, err := l.reader.ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("failed to read input: %w", err)
+	_, ok := <-l.stdinCh
+	if !ok {
+		return fmt.Errorf("stdin channel closed")
 	}
 	return nil
 }
