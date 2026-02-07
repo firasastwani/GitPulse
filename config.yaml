@@ -7,7 +7,6 @@ branch: "main"
 ai:
   provider: "claude"
   model: "claude-sonnet-4-5"
-  # api_key: set CLAUDE_API_KEY in .env instead
   code_review: true
 
 ignore_patterns:

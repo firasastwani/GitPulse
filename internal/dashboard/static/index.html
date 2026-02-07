@@ -395,11 +395,6 @@
 
       function badges(c) {
         const b = [];
-        b.push(
-          c.ai_generated
-            ? '<span class="badge badge-ai">AI</span>'
-            : '<span class="badge badge-human">Human</span>'
-        );
         if (c.pushed) b.push('<span class="badge badge-pushed">Pushed</span>');
         return b.join("");
       }
