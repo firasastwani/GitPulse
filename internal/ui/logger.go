@@ -2,10 +2,10 @@ package ui
 
 import (
 	"fmt"
-	"os"
+	"log"
 	"strings"
+	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/firasastwani/gitpulse/internal/ai"
 )
 
@@ -19,46 +19,48 @@ const (
 	colorReset  = "\033[0m"
 )
 
-// Logger wraps charmbracelet/log for styled GitPulse output.
+// Logger provides GitPulse output. Uses stdlib log to avoid charmbracelet/termenv
+// terminal detection, which can hang in some environments (IDE terminals, SSH, etc.).
 type Logger struct {
-	logger  *log.Logger
 	stdinCh <-chan string // shared channel for all stdin reads
 }
 
-// New creates a new styled Logger.
+// New creates a new Logger.
 // stdinCh should be a channel fed by a single goroutine reading lines from os.Stdin.
 // Pass nil if no interactive input is needed (e.g., non-interactive mode).
 func New(stdinCh <-chan string) *Logger {
-	l := log.NewWithOptions(os.Stdout, log.Options{
-		ReportTimestamp: true,
-		TimeFormat:      "15:04:05",
-	})
+	return &Logger{stdinCh: stdinCh}
+}
 
-	return &Logger{
-		logger:  l,
-		stdinCh: stdinCh,
+func (l *Logger) logWithKeyvals(level, msg string, keyvals ...interface{}) {
+	ts := time.Now().Format("15:04:05")
+	var b strings.Builder
+	b.WriteString(ts + " " + level + " " + msg)
+	for i := 0; i+1 < len(keyvals); i += 2 {
+		b.WriteString(fmt.Sprintf(" %v=%v", keyvals[i], keyvals[i+1]))
 	}
+	log.Println(b.String())
 }
 
 // Info logs an informational message with optional key-value pairs.
 func (l *Logger) Info(msg string, keyvals ...interface{}) {
-	l.logger.Info(msg, keyvals...)
+	l.logWithKeyvals("INFO", msg, keyvals...)
 }
 
 // Warn logs a warning message.
 func (l *Logger) Warn(msg string, keyvals ...interface{}) {
-	l.logger.Warn(msg, keyvals...)
+	l.logWithKeyvals("WARN", msg, keyvals...)
 }
 
 // Error logs an error message.
 func (l *Logger) Error(msg string, err error, keyvals ...interface{}) {
 	kv := append([]interface{}{"err", err}, keyvals...)
-	l.logger.Error(msg, kv...)
+	l.logWithKeyvals("ERRO", msg, kv...)
 }
 
 // GroupInfo logs semantic grouping results in a tree-like format.
 func (l *Logger) GroupInfo(groupCount int, groups []GroupDisplay) {
-	l.logger.Info(fmt.Sprintf("Semantic grouping: %d groups", groupCount))
+	l.Info(fmt.Sprintf("Semantic grouping: %d groups", groupCount))
 	for i, g := range groups {
 		prefix := "├─"
 		if i == len(groups)-1 {
@@ -77,12 +79,12 @@ type GroupDisplay struct {
 
 // CommitSuccess logs a successful commit.
 func (l *Logger) CommitSuccess(hash, message string) {
-	l.logger.Info("Committed", "hash", hash[:7], "msg", message)
+	l.Info("Committed", "hash", hash[:7], "msg", message)
 }
 
 // PushSuccess logs a successful push.
 func (l *Logger) PushSuccess(commitCount int, remote string) {
-	l.logger.Info(fmt.Sprintf("Pushed %d commits", commitCount), "remote", remote)
+	l.Info(fmt.Sprintf("Pushed %d commits", commitCount), "remote", remote)
 }
 
 // ReviewFindings renders code review findings in a styled, tree-like format.
@@ -95,7 +97,7 @@ func (l *Logger) ReviewFindings(findings []ai.ReviewFinding) {
 		}
 	}
 
-	l.logger.Warn(fmt.Sprintf("Code review found %d issue(s), %d blocking", len(findings), blockerCount))
+	l.Warn(fmt.Sprintf("Code review found %d issue(s), %d blocking", len(findings), blockerCount))
 	fmt.Println()
 
 	for i, f := range findings {
@@ -171,7 +173,7 @@ func (l *Logger) PromptReviewAction() (string, error) {
 		return "continue", nil
 	default:
 		// Invalid input — default to continue to avoid blocking
-		l.logger.Warn("Invalid choice, defaulting to continue")
+		l.Warn("Invalid choice, defaulting to continue")
 		return "continue", nil
 	}
 }
@@ -179,7 +181,7 @@ func (l *Logger) PromptReviewAction() (string, error) {
 // WaitForManualFix prints instructions and blocks until the user presses ENTER.
 func (l *Logger) WaitForManualFix() error {
 	fmt.Println()
-	l.logger.Info("Fix the issues in your editor, then press ENTER to re-review...")
+	l.Info("Fix the issues in your editor, then press ENTER to re-review...")
 	_, ok := <-l.stdinCh
 	if !ok {
 		return fmt.Errorf("stdin channel closed")
@@ -189,5 +191,7 @@ func (l *Logger) WaitForManualFix() error {
 
 // AIFixApplied logs that an AI-generated fix was written to a file.
 func (l *Logger) AIFixApplied(file, description string) {
-	l.logger.Info("AI fix applied", "file", file, "fix", description)
+	l.Info("AI fix applied", "file", file, "fix", description)
 }
+
+
