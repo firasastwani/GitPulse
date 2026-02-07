@@ -198,6 +198,12 @@ func (s *Store) All() []CommitRecord {
 	return s.records
 }
 
+// Reload re-reads the history file from disk. Use when serving a dashboard
+// that should reflect commits made by another process (e.g., the daemon).
+func (s *Store) Reload() error {
+	return s.load()
+}
+
 func (s *Store) load() error {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
