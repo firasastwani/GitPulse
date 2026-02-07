@@ -117,7 +117,7 @@ func (m *Manager) GetFileDiff(path string) (string, error) {
 	}
 
 	headTree, err := commitObj.Tree()
-	
+
 	if err != nil {
 		return "", fmt.Errorf("failed to get head tree: %w", err)
 	}
@@ -136,7 +136,7 @@ func (m *Manager) GetFileDiff(path string) (string, error) {
 	}
 
 	return fmt.Sprintf("--- a/%s\n+++ b/%s\n(diff content for %s, old size: %d bytes)",
-	path, path, path, len(oldContent)), nil
+		path, path, path, len(oldContent)), nil
 }
 
 // Commit creates a new commit with the given message.
@@ -151,15 +151,15 @@ func (m *Manager) Commit(message string) (string, error) {
 
 	hash, err := wt.Commit(message, &gogit.CommitOptions{
 		Author: &object.Signature{
-			Name: "GitPulse",
+			Name:  "GitPulse",
 			Email: "gitpulse@auto",
-			When: time.Now(),
+			When:  time.Now(),
 		},
 	})
 
 	if err != nil {
 		return "", fmt.Errorf("failed to commit changes: %w", err)
-	}	
+	}
 
 	return hash.String(), nil
 }
