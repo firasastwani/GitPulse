@@ -54,12 +54,14 @@ func (s *Server) serveIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	_ = s.store.Reload()
 	stats := s.store.Stats()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
 }
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	_ = s.store.Reload()
 	records := s.store.All()
 	// Copy before reversing so we don't mutate the store's internal slice
 	out := make([]store.CommitRecord, len(records))
@@ -78,6 +80,7 @@ func (s *Server) handleCommitByHash(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "hash required", http.StatusBadRequest)
 		return
 	}
+	_ = s.store.Reload()
 	record := s.store.GetByHash(hash)
 	if record == nil {
 		http.NotFound(w, r)
@@ -93,6 +96,7 @@ func (s *Server) handleFilesByPath(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "path query param required", http.StatusBadRequest)
 		return
 	}
+	_ = s.store.Reload()
 	records := s.store.GetByFile(path)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(records)
