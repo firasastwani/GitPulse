@@ -79,7 +79,7 @@ func New(path string) (*Store, error) {
 		if err != nil {
 			return nil, err
 		}
-		path = filepath.Join(home, ".gitpulse", "history.json")
+		path = filepath.Join(home, "gitpulse", "history.json")
 	}
 
 	s := &Store{path: path}
@@ -213,3 +213,5 @@ func (s *Store) flush() error {
 	}
 	return os.WriteFile(s.path, data, 0644)
 }
+
+// testing new file storage location + history generation 
