@@ -60,30 +60,14 @@ func (w *Watcher) Events() <-chan ChangeSet {
 }
 
 // Start begins watching the directory tree recursively for file changes.
+// Returns immediately; the initial directory walk runs asynchronously so startup stays fast.
 func (w *Watcher) Start() error {
 	fsWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
 	}
 
-	// Walk directory tree, watch every subdirectory that isn't ignored
-	err = filepath.Walk(w.root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		if info.IsDir() {
-			if w.shouldIgnore(path) {
-				return filepath.SkipDir
-			}
-			return fsWatcher.Add(path)
-		}
-		return nil
-	})
-	if err != nil {
-		fsWatcher.Close()
-		return err
-	}
-
+	// Event-processing goroutine (runs immediately)
 	go func() {
 		defer fsWatcher.Close()
 
@@ -163,6 +147,27 @@ func (w *Watcher) Start() error {
 		}
 	}()
 
+	// Walk directory tree asynchronously — don't block startup (Walk can be slow on cloud-synced or large trees)
+	go func() {
+		_ = filepath.Walk(w.root, func(path string, info os.FileInfo, walkErr error) error {
+			select {
+			case <-w.done:
+				return filepath.SkipAll
+			default:
+			}
+			if walkErr != nil {
+				return nil
+			}
+			if info.IsDir() {
+				if w.shouldIgnore(path) {
+					return filepath.SkipDir
+				}
+				_ = fsWatcher.Add(path)
+			}
+			return nil
+		})
+	}()
+
 	return nil
 }
 
@@ -185,3 +190,6 @@ func (w *Watcher) shouldIgnore(path string) bool {
 func (w *Watcher) Stop() {
 	close(w.done)
 }
+
+
+// test
