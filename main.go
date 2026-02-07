@@ -39,6 +39,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Daemon mode is interactive — user is at the terminal
+	eng.Interactive = true
+
 	// Write PID file so `gitpulse push` can find us
 	writePID()
 	defer removePID()
