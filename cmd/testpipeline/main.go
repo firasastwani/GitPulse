@@ -8,22 +8,28 @@ import (
 	"time"
 
 	"github.com/firasastwani/gitpulse/internal/ai"
+	"github.com/firasastwani/gitpulse/internal/config"
 	"github.com/firasastwani/gitpulse/internal/git"
 	"github.com/firasastwani/gitpulse/internal/grouper"
 	"github.com/firasastwani/gitpulse/internal/watcher"
 )
 
 func main() {
-	repoPath := "."
-	remote := "origin"
-	branch := "main"
-
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		fmt.Fprintln(os.Stderr, "Set ANTHROPIC_API_KEY env var before running.")
+	// ── Load config (reads config.yaml + .env) ──
+	cfg, err := config.Load("config.yaml")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
 	}
-	model := "claude-sonnet-4-5"
+
+	repoPath := cfg.WatchPath
+	remote := cfg.Remote
+	branch := cfg.Branch
+
+	if cfg.AI.APIKey == "" {
+		fmt.Fprintln(os.Stderr, "No API key found. Set CLAUDE_API_KEY in .env or config.yaml.")
+		os.Exit(1)
+	}
 
 	// ── Step 1: Open repo ──
 	fmt.Println("=== Step 1: Open repo ===")
@@ -108,7 +114,7 @@ func main() {
 
 	// ── Step 5: Claude refinement + commit messages ──
 	fmt.Println("\n=== Step 5: Claude RefineAndCommit ===")
-	aiClient := ai.NewClient(apiKey, model)
+	aiClient := ai.NewClient(cfg.AI.APIKey, cfg.AI.Model)
 
 	refined, err := aiClient.RefineAndCommit(groups)
 	if err != nil {
