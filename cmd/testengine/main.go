@@ -14,7 +14,7 @@ import (
 
 func main() {
 	// ── Load config (reads config.yaml + .env) ──
-	logger := ui.New()
+	logger := ui.New(nil)
 	logger.Info("=== Engine Pipeline Test ===")
 
 	cfg, err := config.Load("config.yaml")

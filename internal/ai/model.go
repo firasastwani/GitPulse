@@ -207,16 +207,11 @@ func (c *Client) RefineAndCommit(groups []grouper.FileGroup) ([]grouper.FileGrou
 				combinedDiffs.WriteString(d)
 			}
 		}
-		var combinedDiffsStr string
-		if combinedDiffs.Len() > 0 {
-			combinedDiffsStr = combinedDiffs.String()
-		}
-
 		refinedGroups[i] = grouper.FileGroup{
 			Files:         r.Files,
 			Reason:        r.Reason,
 			CommitMessage: r.CommitMessage,
-			Diffs:         combinedDiffs,
+			Diffs:         combinedDiffs.String(),
 		}
 	}
 
@@ -262,4 +257,3 @@ func (c *Client) GenerateCommitMessage(diff string, files []string) (string, err
 
 	return msg, nil
 }
-
