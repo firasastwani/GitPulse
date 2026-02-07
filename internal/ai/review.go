@@ -178,3 +178,10 @@ func truncate(s string, maxLen int) string {
 	}
 	return s[:maxLen] + "..."
 }
+
+// example creating an error
+
+func wrongSyntax... (s string, ) {
+
+	broken code example here
+}
