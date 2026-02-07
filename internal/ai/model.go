@@ -123,7 +123,13 @@ func (c *Client) RefineAndCommit(groups []grouper.FileGroup) ([]grouper.FileGrou
 	var sb strings.Builder
 	sb.WriteString("You are a git commit assistant. Analyze the following pre-grouped file changes and:\n")
 	sb.WriteString("1. Refine the groupings if files should be moved between groups\n")
-	sb.WriteString("2. Generate a concise, conventional commit message for each group\n\n")
+	sb.WriteString("2. Generate a specific, descriptive conventional commit message for each group.\n")
+	sb.WriteString("   - The message MUST describe WHAT changed, not just that something changed.\n")
+	sb.WriteString("   - BAD:  'refactor(ui): update logger implementation'\n")
+	sb.WriteString("   - GOOD: 'feat(ui): add interactive code review prompts with severity-colored findings display'\n")
+	sb.WriteString("   - BAD:  'chore: auto-commit changes'\n")
+	sb.WriteString("   - GOOD: 'feat(config): add CodeReview toggle to AIConfig for optional pre-push review'\n")
+	sb.WriteString("   - Include the specific behavior or feature, not generic verbs like 'update' or 'modify'\n\n")
 	sb.WriteString("Respond with ONLY valid JSON in this exact format:\n")
 	sb.WriteString(`[{"files":["path/to/file.go"],"reason":"why grouped","commit_message":"feat: description"}]`)
 	sb.WriteString("\n\nPre-grouped changes:\n\n")
@@ -189,8 +195,13 @@ func stripCodeFences(s string) string {
 // Used as fallback when RefineAndCommit fails for individual groups.
 func (c *Client) GenerateCommitMessage(diff string, files []string) (string, error) {
 	prompt := fmt.Sprintf(
-		"Generate a single concise git commit message using conventional commits format "+
-			"(feat/fix/refactor/chore/docs/test).\n\nFiles changed: %s\n\nDiff:\n%s\n\n"+
+		"Generate a single git commit message using conventional commits format "+
+			"(feat/fix/refactor/chore/docs/test).\n\n"+
+			"The message MUST be specific about WHAT changed — describe the actual behavior or feature added.\n"+
+			"BAD:  'refactor(engine): update engine implementation'\n"+
+			"GOOD: 'feat(engine): add AI code review gate with interactive fix/continue prompt before push'\n"+
+			"Avoid generic verbs like 'update', 'modify', 'change' — say what was actually done.\n\n"+
+			"Files changed: %s\n\nDiff:\n%s\n\n"+
 			"Respond with ONLY the commit message, nothing else.",
 		strings.Join(files, ", "), diff,
 	)
@@ -208,4 +219,10 @@ func (c *Client) GenerateCommitMessage(diff string, files []string) (string, err
 	return msg, nil
 }
 
-/// testing file storage diff 
+
+
+
+func wrongSyntax... (s string, ) {
+
+	broken code example here
+}
