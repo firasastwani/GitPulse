@@ -12,6 +12,7 @@ import (
 // ANSI color codes for terminal output.
 const (
 	colorRed    = "\033[31m"
+	colorGreen  = "\033[32m"
 	colorYellow = "\033[33m"
 	colorCyan   = "\033[36m"
 	colorGray   = "\033[90m"
@@ -32,30 +33,32 @@ func New(stdinCh <-chan string) *Logger {
 	return &Logger{stdinCh: stdinCh}
 }
 
-func (l *Logger) logWithKeyvals(level, msg string, keyvals ...interface{}) {
+func (l *Logger) logWithKeyvals(level, levelColor, msg string, keyvals ...interface{}) {
 	ts := time.Now().Format("15:04:05")
 	var b strings.Builder
-	b.WriteString(ts + " " + level + " " + msg)
+	b.WriteString(colorGray + ts + colorReset + " ")
+	b.WriteString(levelColor + level + colorReset + " ")
+	b.WriteString(msg)
 	for i := 0; i+1 < len(keyvals); i += 2 {
-		b.WriteString(fmt.Sprintf(" %v=%v", keyvals[i], keyvals[i+1]))
+		b.WriteString(colorGray + fmt.Sprintf(" %v=%v", keyvals[i], keyvals[i+1]) + colorReset)
 	}
 	log.Println(b.String())
 }
 
 // Info logs an informational message with optional key-value pairs.
 func (l *Logger) Info(msg string, keyvals ...interface{}) {
-	l.logWithKeyvals("INFO", msg, keyvals...)
+	l.logWithKeyvals("INFO", colorGreen, msg, keyvals...)
 }
 
 // Warn logs a warning message.
 func (l *Logger) Warn(msg string, keyvals ...interface{}) {
-	l.logWithKeyvals("WARN", msg, keyvals...)
+	l.logWithKeyvals("WARN", colorYellow, msg, keyvals...)
 }
 
 // Error logs an error message.
 func (l *Logger) Error(msg string, err error, keyvals ...interface{}) {
 	kv := append([]interface{}{"err", err}, keyvals...)
-	l.logWithKeyvals("ERRO", msg, kv...)
+	l.logWithKeyvals("ERRO", colorRed, msg, kv...)
 }
 
 // GroupInfo logs semantic grouping results in a tree-like format.
@@ -193,5 +196,3 @@ func (l *Logger) WaitForManualFix() error {
 func (l *Logger) AIFixApplied(file, description string) {
 	l.Info("AI fix applied", "file", file, "fix", description)
 }
-
-
