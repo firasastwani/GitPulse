@@ -1,5 +1,7 @@
 package engine
 
+
+
 import (
 	"fmt"
 	"strings"
@@ -108,7 +110,7 @@ func (e *Engine) ProcessChanges(changeset watcher.ChangeSet) {
 	// get diffs
 	for i := range groups {
 
-		for _, f := range groups[i].Files{
+		for _, f := range groups[i].Files {
 
 			d, err := e.git.GetFileDiff(f)
 			if err != nil {
