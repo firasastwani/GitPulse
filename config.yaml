@@ -6,8 +6,9 @@ branch: "main"
 
 ai:
   provider: "claude"
-  model: "claude-sonnet-4-20250514"
+  model: "claude-sonnet-4-5"
   # api_key: "sk-..." # or set ANTHROPIC_API_KEY env var
+  # api_key: set ANTHROPIC_API_KEY env var instead
 
 ignore_patterns:
   - "*.log"
