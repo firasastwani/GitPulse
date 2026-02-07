@@ -20,9 +20,10 @@ type Config struct {
 
 // AIConfig holds AI provider settings.
 type AIConfig struct {
-	Provider string `yaml:"provider"`
-	Model    string `yaml:"model"`
-	APIKey   string `yaml:"api_key"` // can also use ANTHROPIC_API_KEY env var
+	Provider   string `yaml:"provider"`
+	Model      string `yaml:"model"`
+	APIKey     string `yaml:"api_key"`     // can also use ANTHROPIC_API_KEY env var
+	CodeReview bool   `yaml:"code_review"` // enable AI code review before push (default: true)
 }
 
 // Load reads and parses the YAML config file.
@@ -64,8 +65,9 @@ func defaultConfig() *Config {
 		Remote:          "origin",
 		Branch:          "main",
 		AI: AIConfig{
-			Provider: "claude",
-			Model:    "claude-sonnet-4-20250514",
+			Provider:   "claude",
+			Model:      "claude-sonnet-4-20250514",
+			CodeReview: true,
 		},
 		IgnorePatterns: []string{
 			"*.log",
