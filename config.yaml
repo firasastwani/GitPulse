@@ -1,0 +1,17 @@
+watch_path: "."
+debounce_seconds: 30
+auto_push: true
+remote: "origin"
+branch: "main"
+
+ai:
+  provider: "claude"
+  model: "claude-sonnet-4-20250514"
+  # api_key: "sk-..." # or set ANTHROPIC_API_KEY env var
+
+ignore_patterns:
+  - "*.log"
+  - "node_modules/"
+  - ".git/"
+  - "vendor/"
+  - ".gitpulse/"
