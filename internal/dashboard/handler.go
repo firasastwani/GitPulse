@@ -61,12 +61,15 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	records := s.store.All()
+	// Copy before reversing so we don't mutate the store's internal slice
+	out := make([]store.CommitRecord, len(records))
+	copy(out, records)
 	// Reverse chronological (newest first)
-	for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
-		records[i], records[j] = records[j], records[i]
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(records)
+	json.NewEncoder(w).Encode(out)
 }
 
 func (s *Server) handleCommitByHash(w http.ResponseWriter, r *http.Request) {
