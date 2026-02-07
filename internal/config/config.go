@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -27,6 +28,9 @@ type AIConfig struct {
 // Load reads and parses the YAML config file.
 // Falls back to sensible defaults if the file doesn't exist.
 func Load(path string) (*Config, error) {
+	// Load .env file if it exists (does not override existing env vars)
+	_ = godotenv.Load()
+
 	cfg := defaultConfig()
 
 	data, err := os.ReadFile(path)
@@ -42,8 +46,10 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
-	// Override API key from env var if set
-	if envKey := os.Getenv("ANTHROPIC_API_KEY"); envKey != "" {
+	// Override API key from env var if set (check both names)
+	if envKey := os.Getenv("CLAUDE_API_KEY"); envKey != "" {
+		cfg.AI.APIKey = envKey
+	} else if envKey := os.Getenv("ANTHROPIC_API_KEY"); envKey != "" {
 		cfg.AI.APIKey = envKey
 	}
 
