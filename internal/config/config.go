@@ -10,7 +10,7 @@ import (
 // Config holds all GitPulse configuration.
 type Config struct {
 	WatchPath       string   `yaml:"watch_path"`
-	DebounceSeconds int      `yaml:"debounce_seconds"`
+	DebounceSeconds int      `yaml:"debounce_seconds"` // safety timer — auto-flushes if user forgets to `gitpulse push`
 	AutoPush        bool     `yaml:"auto_push"`
 	Remote          string   `yaml:"remote"`
 	Branch          string   `yaml:"branch"`
@@ -59,7 +59,7 @@ func Load(path string) (*Config, error) {
 func defaultConfig() *Config {
 	return &Config{
 		WatchPath:       ".",
-		DebounceSeconds: 30,
+		DebounceSeconds: 900, // 15 min safety net
 		AutoPush:        true,
 		Remote:          "origin",
 		Branch:          "main",

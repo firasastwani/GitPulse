@@ -1,10 +1,10 @@
 package engine
 
-// testing stuff........
-
 import (
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/firasastwani/gitpulse/internal/ai"
 	"github.com/firasastwani/gitpulse/internal/config"
@@ -16,7 +16,7 @@ import (
 )
 
 // Engine orchestrates the full GitPulse pipeline:
-// watcher -> grouper -> per-group (stage, AI commit, commit) -> push
+// watcher buffers changes -> user triggers `gitpulse push` OR safety timer fires
 type Engine struct {
 	cfg     *config.Config
 	logger  *ui.Logger
@@ -25,26 +25,30 @@ type Engine struct {
 	ai      *ai.Client
 	store   *store.Store
 	done    chan struct{}
+
+	// pending changes buffer (protected by mu)
+	mu      sync.Mutex
+	pending []watcher.FileChange
+
+	// safety timer — auto-flushes if user forgets
+	timerMu     sync.Mutex
+	safetyTimer *time.Timer
 }
 
 // New creates a new Engine with all components wired together.
 func New(cfg *config.Config, logger *ui.Logger) (*Engine, error) {
-	// Initialize watcher
 	w, err := watcher.New(cfg.WatchPath, cfg.DebounceSeconds, cfg.IgnorePatterns)
 	if err != nil {
 		return nil, err
 	}
 
-	// Initialize git manager
 	g, err := git.New(cfg.WatchPath, cfg.Remote, cfg.Branch)
 	if err != nil {
 		return nil, err
 	}
 
-	// Initialize AI client
 	aiClient := ai.NewClient(cfg.AI.APIKey, cfg.AI.Model)
 
-	// Initialize store
 	s, err := store.New("")
 	if err != nil {
 		return nil, err
@@ -61,57 +65,125 @@ func New(cfg *config.Config, logger *ui.Logger) (*Engine, error) {
 	}, nil
 }
 
-// Run starts the main engine loop. Call this in a goroutine.
+// Run starts the main engine loop. Buffers changes from the watcher.
 func (e *Engine) Run() {
-	// Start the file watcher
 	if err := e.watcher.Start(); err != nil {
 		e.logger.Error("Failed to start watcher", err)
 		return
 	}
 
-	e.logger.Info("Watching for changes...")
+	e.logger.Info("Watching for changes...", "safety_timer", fmt.Sprintf("%ds", e.cfg.DebounceSeconds))
+	e.logger.Info("Run `gitpulse push` in another terminal to commit & push")
 
 	for {
 		select {
 		case changeset := <-e.watcher.Events():
-			e.ProcessChanges(changeset)
+			e.bufferChanges(changeset)
 		case <-e.done:
 			return
 		}
 	}
 }
 
+// bufferChanges adds new file changes to pending and resets the safety timer.
+func (e *Engine) bufferChanges(changeset watcher.ChangeSet) {
+	e.mu.Lock()
+	e.pending = append(e.pending, changeset.Files...)
+	count := len(e.pending)
+	e.mu.Unlock()
+
+	e.logger.Info("Changes buffered", "new", len(changeset.Files), "total_pending", count)
+
+	// Reset safety timer
+	e.resetSafetyTimer()
+}
+
+// resetSafetyTimer resets (or starts) the safety timer that auto-flushes.
+func (e *Engine) resetSafetyTimer() {
+	e.timerMu.Lock()
+	defer e.timerMu.Unlock()
+
+	if e.safetyTimer != nil {
+		e.safetyTimer.Stop()
+	}
+
+	delay := time.Duration(e.cfg.DebounceSeconds) * time.Second
+	e.safetyTimer = time.AfterFunc(delay, func() {
+		e.mu.Lock()
+		hasPending := len(e.pending) > 0
+		e.mu.Unlock()
+
+		if hasPending {
+			e.logger.Warn("Safety timer fired — auto-flushing pending changes")
+			e.Flush()
+		}
+	})
+}
+
+// Flush processes all buffered changes through the full pipeline.
+// Called by `gitpulse push` (via SIGUSR1) or by the safety timer.
+func (e *Engine) Flush() {
+	// Grab and clear pending changes
+	e.mu.Lock()
+	if len(e.pending) == 0 {
+		e.mu.Unlock()
+		e.logger.Info("Nothing to flush — no pending changes")
+		return
+	}
+	files := make([]watcher.FileChange, len(e.pending))
+	copy(files, e.pending)
+	e.pending = nil
+	e.mu.Unlock()
+
+	// Stop safety timer since we're flushing now
+	e.timerMu.Lock()
+	if e.safetyTimer != nil {
+		e.safetyTimer.Stop()
+	}
+	e.timerMu.Unlock()
+
+	changeset := watcher.ChangeSet{
+		Files:     files,
+		Timestamp: time.Now(),
+	}
+
+	e.processChanges(changeset)
+}
+
+// PendingCount returns the number of buffered file changes.
+func (e *Engine) PendingCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.pending)
+}
+
 // Stop gracefully shuts down the engine.
 func (e *Engine) Stop() {
+	e.timerMu.Lock()
+	if e.safetyTimer != nil {
+		e.safetyTimer.Stop()
+	}
+	e.timerMu.Unlock()
+
 	e.watcher.Stop()
 	close(e.done)
 }
 
-// ProcessChanges handles a debounced batch of file changes through the full pipeline.
-func (e *Engine) ProcessChanges(changeset watcher.ChangeSet) {
-	// TODO: Implement the full pipeline:
-	// 1. Log change detection
-	// 2. Get diffs for each file
-	// 3. PreGroup with heuristics
-	// 4. AI refine groups + generate commit messages
-	// 5. For each group: stage, commit
-	// 6. Push all commits
-	// 7. Save to store
-
-	e.logger.Info("Changes detected", "files", len(changeset.Files))
+// processChanges runs the full pipeline: group -> AI -> stage -> commit -> push.
+func (e *Engine) processChanges(changeset watcher.ChangeSet) {
+	e.logger.Info("Processing changes", "files", len(changeset.Files))
 
 	for _, fc := range changeset.Files {
-		e.logger.Info("detected change", "path", fc.Path, "type", fc.Type)
+		e.logger.Info("  file", "path", fc.Path, "type", fc.Type)
 	}
 
+	// 1. Heuristic grouping
 	groups := grouper.PreGroup(changeset)
 	e.logger.Info("Pre-grouped files", "groups", len(groups))
 
-	// get diffs
+	// 2. Get diffs
 	for i := range groups {
-
 		for _, f := range groups[i].Files {
-
 			d, err := e.git.GetFileDiff(f)
 			if err != nil {
 				d = fmt.Sprintf("--- /dev/null\n+++ b/%s\n(new or deleted file)", f)
@@ -120,12 +192,11 @@ func (e *Engine) ProcessChanges(changeset watcher.ChangeSet) {
 		}
 	}
 
+	// 3. AI refine + commit messages
 	refined, err := e.ai.RefineAndCommit(groups)
-
 	if err != nil {
-		e.logger.Warn("AI refinement failed, falling back to heuristic groups", "err", err)
+		e.logger.Warn("AI refinement failed, using heuristic groups", "err", err)
 		refined = groups
-
 		for i := range refined {
 			if refined[i].CommitMessage == "" {
 				refined[i].CommitMessage = "chore: auto-commit changes"
@@ -143,7 +214,7 @@ func (e *Engine) ProcessChanges(changeset watcher.ChangeSet) {
 	}
 	e.logger.GroupInfo(len(refined), displays)
 
-	// 5. Reset staging, then for each group: stage + commit
+	// 4. Reset staging, then stage + commit per group
 	if err := e.git.ResetStaging(); err != nil {
 		e.logger.Error("Failed to reset staging", err)
 		return
@@ -165,7 +236,6 @@ func (e *Engine) ProcessChanges(changeset watcher.ChangeSet) {
 		e.logger.CommitSuccess(hash, g.CommitMessage)
 		commitCount++
 
-		// 7. Save to store
 		if err := e.store.Save(store.CommitRecord{
 			Hash:        hash,
 			Message:     g.CommitMessage,
@@ -178,7 +248,7 @@ func (e *Engine) ProcessChanges(changeset watcher.ChangeSet) {
 		}
 	}
 
-	// 6. Push all commits
+	// 5. Push
 	if commitCount > 0 && e.cfg.AutoPush {
 		if err := e.git.Push(); err != nil {
 			e.logger.Error("Failed to push", err)

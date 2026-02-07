@@ -1,5 +1,5 @@
 watch_path: "."
-debounce_seconds: 30
+debounce_seconds: 900 # 15 min safety timer (auto-flushes if you forget)
 auto_push: true
 remote: "origin"
 branch: "main"
@@ -7,8 +7,7 @@ branch: "main"
 ai:
   provider: "claude"
   model: "claude-sonnet-4-5"
-  # api_key: "sk-..." # or set ANTHROPIC_API_KEY env var
-  # api_key: set ANTHROPIC_API_KEY env var instead
+  # api_key: set CLAUDE_API_KEY in .env instead
 
 ignore_patterns:
   - "*.log"
@@ -16,3 +15,4 @@ ignore_patterns:
   - ".git/"
   - "vendor/"
   - ".gitpulse/"
+  - ".gitpulse.pid"

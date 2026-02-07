@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strconv"
 	"syscall"
 
 	"github.com/firasastwani/gitpulse/internal/config"
@@ -11,33 +14,113 @@ import (
 	"github.com/firasastwani/gitpulse/internal/ui"
 )
 
+const pidFile = ".gitpulse.pid"
+
 func main() {
-	// Load configuration
+	// If the user runs `gitpulse push`, signal the running daemon and exit
+	if len(os.Args) > 1 && os.Args[1] == "push" {
+		pushCmd()
+		return
+	}
+
+	// ── Daemon mode: watch + buffer + wait for push ──
 	cfg, err := config.Load("config.yaml")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Initialize styled logger
 	logger := ui.New()
 	logger.Info("GitPulse starting", "path", cfg.WatchPath, "branch", cfg.Branch)
 
-	// Create and start the engine
 	eng, err := engine.New(cfg, logger)
 	if err != nil {
 		logger.Error("Failed to initialize engine", err)
 		os.Exit(1)
 	}
 
-	// Start the engine in a goroutine
+	// Write PID file so `gitpulse push` can find us
+	writePID()
+	defer removePID()
+
+	// Listen for SIGUSR1 (from `gitpulse push`) to flush
+	usr1 := make(chan os.Signal, 1)
+	signal.Notify(usr1, syscall.SIGUSR1)
+
+	// Listen for SIGINT/SIGTERM to shut down
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start the engine (watches + buffers changes)
 	go eng.Run()
 
-	// Wait for interrupt signal (Ctrl+C) to gracefully shut down
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	<-sigCh
+	// Listen for Enter key in the same terminal to trigger push
+	stdinCh := make(chan struct{})
+	go func() {
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			stdinCh <- struct{}{}
+		}
+	}()
 
-	logger.Info("Shutting down GitPulse...")
-	eng.Stop()
+	logger.Info("Press ENTER to commit & push (or Ctrl+C to quit)")
+
+	for {
+		select {
+		case <-stdinCh:
+			pending := eng.PendingCount()
+			if pending > 0 {
+				logger.Info("Flushing changes...", "pending", pending)
+				eng.Flush()
+				logger.Info("Press ENTER to commit & push (or Ctrl+C to quit)")
+			} else {
+				logger.Info("No pending changes to flush")
+			}
+		case <-usr1:
+			logger.Info("Received push signal — flushing changes...")
+			eng.Flush()
+		case <-quit:
+			logger.Info("Shutting down GitPulse...")
+			eng.Stop()
+			return
+		}
+	}
+}
+
+// pushCmd reads the PID file and sends SIGUSR1 to the running daemon.
+func pushCmd() {
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "GitPulse daemon is not running. Start it with `gitpulse` first.")
+		os.Exit(1)
+	}
+
+	pid, err := strconv.Atoi(string(data))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Invalid PID file. Restart the daemon.")
+		os.Exit(1)
+	}
+
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Could not find daemon process. Restart the daemon.")
+		os.Exit(1)
+	}
+
+	if err := proc.Signal(syscall.SIGUSR1); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to signal daemon (PID %d): %v\n", pid, err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Sent push signal to GitPulse daemon (PID %d)\n", pid)
+}
+
+func writePID() {
+	pid := os.Getpid()
+	path := filepath.Join(".", pidFile)
+	os.WriteFile(path, []byte(strconv.Itoa(pid)), 0644)
+}
+
+func removePID() {
+	os.Remove(filepath.Join(".", pidFile))
 }
