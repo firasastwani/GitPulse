@@ -1,475 +1,389 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GitPulse Effects</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <style>
-      :root {
-        --bg: #0d1117;
-        --surface: #161b22;
-        --border: #30363d;
-        --text: #e6edf3;
-        --text-muted: #8b949e;
-        --accent: #58a6ff;
-        --accent-dim: #388bfd;
-        --ai: #a371f7;
-        --success: #3fb950;
-        --danger: #f85149;
-        --radius: 8px;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        font-family: "DM Sans", system-ui, sans-serif;
-        background: var(--bg);
-        color: var(--text);
-        min-height: 100vh;
-      }
-      .container {
-        max-width: 960px;
-        margin: 0 auto;
-        padding: 1.5rem;
-      }
-      h1 {
-        font-size: 1.75rem;
-        font-weight: 700;
-        margin: 0 0 0.25rem 0;
-        letter-spacing: -0.02em;
-      }
-      .subtitle {
-        color: var(--text-muted);
-        font-size: 0.9rem;
-        margin-bottom: 1.5rem;
-      }
-      .cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 1rem;
-        margin-bottom: 2rem;
-      }
-      .card {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 1.25rem;
-      }
-      .card-value {
-        font-family: "JetBrains Mono", monospace;
-        font-size: 1.75rem;
-        font-weight: 600;
-        color: var(--accent);
-      }
-      .card-label {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-top: 0.25rem;
-      }
-      .card-value.added {
-        color: var(--success);
-      }
-      .card-value.removed {
-        color: var(--danger);
-      }
-      .timeline {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        overflow: hidden;
-      }
-      .timeline-header {
-        padding: 1rem 1.25rem;
-        border-bottom: 1px solid var(--border);
-        font-weight: 600;
-        font-size: 0.9rem;
-      }
-      .commit-row {
-        border-bottom: 1px solid var(--border);
-        cursor: pointer;
-        transition: background 0.15s;
-      }
-      .commit-row:hover {
-        background: rgba(255, 255, 255, 0.03);
-      }
-      .commit-row:last-child {
-        border-bottom: none;
-      }
-      .commit-main {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        padding: 1rem 1.25rem;
-        flex-wrap: wrap;
-      }
-      .commit-hash {
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.85rem;
-        color: var(--accent);
-      }
-      .commit-msg {
-        flex: 1;
-        min-width: 0;
-        font-size: 0.95rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .badges {
-        display: flex;
-        gap: 0.5rem;
-        flex-shrink: 0;
-      }
-      .badge {
-        font-size: 0.7rem;
-        padding: 0.2rem 0.5rem;
-        border-radius: 4px;
-        font-weight: 500;
-      }
-      .badge-ai {
-        background: rgba(163, 113, 247, 0.2);
-        color: var(--ai);
-      }
-      .badge-human {
-        background: rgba(139, 148, 158, 0.2);
-        color: var(--text-muted);
-      }
-      .badge-pushed {
-        background: rgba(63, 185, 80, 0.2);
-        color: var(--success);
-      }
-      .commit-date {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-      }
-      .commit-expand {
-        padding: 0 1.25rem 1rem 3.5rem;
-        font-size: 0.85rem;
-      }
-      .commit-expand.files {
-        display: grid;
-        gap: 0.5rem;
-      }
-      .file-item {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.8rem;
-      }
-      .file-path {
-        color: var(--text);
-      }
-      .file-stats {
-        color: var(--text-muted);
-        font-size: 0.75rem;
-      }
-      .file-stats .add {
-        color: var(--success);
-      }
-      .file-stats .del {
-        color: var(--danger);
-      }
-      .empty-state {
-        padding: 3rem;
-        text-align: center;
-        color: var(--text-muted);
-      }
-      .modal-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 100;
-        padding: 2rem;
-      }
-      .modal {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        max-width: 640px;
-        width: 100%;
-        max-height: 80vh;
-        overflow: auto;
-      }
-      .modal-header {
-        padding: 1.25rem;
-        border-bottom: 1px solid var(--border);
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-      }
-      .modal-title {
-        font-weight: 600;
-      }
-      .modal-close {
-        background: none;
-        border: none;
-        color: var(--text-muted);
-        cursor: pointer;
-        font-size: 1.5rem;
-        line-height: 1;
-      }
-      .modal-close:hover {
-        color: var(--text);
-      }
-      .modal-body {
-        padding: 1.25rem;
-      }
-      .modal-body pre {
-        font-family: "JetBrains Mono", monospace;
-        font-size: 0.8rem;
-        white-space: pre-wrap;
-        word-break: break-all;
-        background: var(--bg);
-        padding: 1rem;
-        border-radius: 6px;
-        overflow-x: auto;
-      }
-      .modal-meta {
-        font-size: 0.85rem;
-        color: var(--text-muted);
-        margin-bottom: 1rem;
-      }
-      .hidden {
-        display: none !important;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <h1>GitPulse Effects</h1>
-      <p class="subtitle">Impact from .gitpulse/history.json</p>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitPulse Effects</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #388bfd;
+      --ai: #a371f7;
+      --success: #3fb950;
+      --danger: #f85149;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin: 0 0 0.25rem 0;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 1.5rem;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+    }
+    .card-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .card-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0.25rem;
+    }
+    .card-value.added { color: var(--success); }
+    .card-value.removed { color: var(--danger); }
+    .timeline {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .timeline-header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .commit-row {
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .commit-row:hover { background: rgba(255,255,255,0.03); }
+    .commit-row:last-child { border-bottom: none; }
+    .commit-main {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.25rem;
+      flex-wrap: wrap;
+    }
+    .commit-hash {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--accent);
+    }
+    .commit-msg {
+      flex: 1;
+      min-width: 0;
+      font-size: 0.95rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .badges { display: flex; gap: 0.5rem; flex-shrink: 0; }
+    .badge {
+      font-size: 0.7rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .badge-ai {
+      background: rgba(163, 113, 247, 0.2);
+      color: var(--ai);
+    }
+    .badge-human {
+      background: rgba(139, 148, 158, 0.2);
+      color: var(--text-muted);
+    }
+    .badge-pushed {
+      background: rgba(63, 185, 80, 0.2);
+      color: var(--success);
+    }
+    .commit-date {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .commit-expand {
+      padding: 0 1.25rem 1rem 3.5rem;
+      font-size: 0.85rem;
+    }
+    .commit-expand.files {
+      display: grid;
+      gap: 0.5rem;
+    }
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+    }
+    .file-path { color: var(--text); }
+    .file-stats {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+    .file-stats .add { color: var(--success); }
+    .file-stats .del { color: var(--danger); }
+    .empty-state {
+      padding: 3rem;
+      text-align: center;
+      color: var(--text-muted);
+    }
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 2rem;
+    }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      max-width: 640px;
+      width: 100%;
+      max-height: 80vh;
+      overflow: auto;
+    }
+    .modal-header {
+      padding: 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .modal-title { font-weight: 600; }
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-body { padding: 1.25rem; }
+    .modal-body pre {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: var(--bg);
+      padding: 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+    .modal-meta {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>GitPulse Effects</h1>
+    <p class="subtitle">Impact from .gitpulse/history.json</p>
 
-      <div class="cards">
-        <div class="card">
-          <div class="card-value" id="stat-commits">—</div>
-          <div class="card-label">Commits</div>
-        </div>
-        <div class="card">
-          <div class="card-value" id="stat-files">—</div>
-          <div class="card-label">Files Touched</div>
-        </div>
-        <div class="card">
-          <div class="card-value added" id="stat-added">—</div>
-          <div class="card-label">Lines Added</div>
-        </div>
-        <div class="card">
-          <div class="card-value removed" id="stat-removed">—</div>
-          <div class="card-label">Lines Removed</div>
-        </div>
+    <div class="cards">
+      <div class="card">
+        <div class="card-value" id="stat-commits">—</div>
+        <div class="card-label">Commits</div>
       </div>
-
-      <div class="timeline">
-        <div class="timeline-header">Activity Timeline</div>
-        <div id="commit-list">
-          <div class="empty-state">Loading…</div>
-        </div>
+      <div class="card">
+        <div class="card-value" id="stat-files">—</div>
+        <div class="card-label">Files Touched</div>
+      </div>
+      <div class="card">
+        <div class="card-value added" id="stat-added">—</div>
+        <div class="card-label">Lines Added</div>
+      </div>
+      <div class="card">
+        <div class="card-value removed" id="stat-removed">—</div>
+        <div class="card-label">Lines Removed</div>
       </div>
     </div>
 
-    <div id="modal" class="modal-overlay hidden">
-      <div class="modal">
-        <div class="modal-header">
-          <span class="modal-title" id="modal-title">Commit Details</span>
-          <button class="modal-close" onclick="closeModal()">&times;</button>
-        </div>
-        <div class="modal-body" id="modal-body"></div>
+    <div class="timeline">
+      <div class="timeline-header">Activity Timeline</div>
+      <div id="commit-list">
+        <div class="empty-state">Loading…</div>
       </div>
     </div>
+  </div>
 
-    <script>
-      const api = "";
-      let history = [];
+  <div id="modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title" id="modal-title">Commit Details</span>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
 
-      async function fetchStats() {
-        const r = await fetch(api + "/api/stats");
-        return r.json();
-      }
-      async function fetchHistory() {
-        const r = await fetch(api + "/api/history");
-        return r.json();
-      }
-      async function fetchCommit(hash) {
-        const r = await fetch(api + "/api/commits/" + hash);
-        if (!r.ok) return null;
-        return r.json();
-      }
+  <script>
+    const api = '';
+    let history = [];
 
-      function formatDate(iso) {
-        const d = new Date(iso);
-        return d.toLocaleString();
-      }
-      function shortHash(h) {
-        return h ? h.slice(0, 7) : "";
-      }
+    async function fetchStats() {
+      const r = await fetch(api + '/api/stats');
+      return r.json();
+    }
+    async function fetchHistory() {
+      const r = await fetch(api + '/api/history');
+      return r.json();
+    }
+    async function fetchCommit(hash) {
+      const r = await fetch(api + '/api/commits/' + hash);
+      if (!r.ok) return null;
+      return r.json();
+    }
 
-      function renderStats(stats) {
-        document.getElementById("stat-commits").textContent =
-          stats.total_commits;
-        document.getElementById("stat-files").textContent =
-          stats.total_files_changed;
-        document.getElementById("stat-added").textContent =
-          stats.total_lines_added;
-        document.getElementById("stat-removed").textContent =
-          stats.total_lines_removed;
-      }
+    function formatDate(iso) {
+      const d = new Date(iso);
+      return d.toLocaleString();
+    }
+    function shortHash(h) { return h ? h.slice(0, 7) : ''; }
 
-      function badges(c) {
-        const b = [];
-        b.push(
-          c.ai_generated
-            ? '<span class="badge badge-ai">AI</span>'
-            : '<span class="badge badge-human">Human</span>'
-        );
-        if (c.pushed) b.push('<span class="badge badge-pushed">Pushed</span>');
-        return b.join("");
-      }
+    function renderStats(stats) {
+      document.getElementById('stat-commits').textContent = stats.total_commits;
+      document.getElementById('stat-files').textContent = stats.total_files_changed;
+      document.getElementById('stat-added').textContent = stats.total_lines_added;
+      document.getElementById('stat-removed').textContent = stats.total_lines_removed;
+    }
 
-      function renderCommitRow(c, expanded) {
-        const exp = expanded ? "commit-expand" : "commit-expand hidden";
-        const filesHtml = c.files
-          .map(
-            (f) => `
+    function badges(c) {
+      const b = [];
+      b.push(c.ai_generated ? '<span class="badge badge-ai">AI</span>' : '<span class="badge badge-human">Human</span>');
+      if (c.pushed) b.push('<span class="badge badge-pushed">Pushed</span>');
+      return b.join('');
+    }
+
+    function renderCommitRow(c, expanded) {
+      const exp = expanded ? 'commit-expand' : 'commit-expand hidden';
+      const filesHtml = c.files.map(f => `
         <div class="file-item">
           <span class="file-path">${escapeHtml(f.path)}</span>
-          <span class="file-stats"><span class="add">+${
-            f.lines_added
-          }</span> <span class="del">-${f.lines_removed}</span> ${
-              f.status || ""
-            }</span>
+          <span class="file-stats"><span class="add">+${f.lines_added}</span> <span class="del">-${f.lines_removed}</span> ${f.status || ''}</span>
         </div>
-      `
-          )
-          .join("");
-        return `
+      `).join('');
+      return `
         <div class="commit-row" data-hash="${escapeHtml(c.hash)}">
           <div class="commit-main">
             <span class="commit-hash">${shortHash(c.hash)}</span>
-            <span class="commit-msg" title="${escapeHtml(
-              c.message
-            )}">${escapeHtml(c.message || "(no message)")}</span>
+            <span class="commit-msg" title="${escapeHtml(c.message)}">${escapeHtml(c.message || '(no message)')}</span>
             <span class="badges">${badges(c)}</span>
             <span class="commit-date">${formatDate(c.created_at)}</span>
           </div>
           <div class="${exp} files">${filesHtml}</div>
         </div>
       `;
-      }
+    }
 
-      function escapeHtml(s) {
-        if (!s) return "";
-        const d = document.createElement("div");
-        d.textContent = s;
-        return d.innerHTML;
-      }
+    function escapeHtml(s) {
+      if (!s) return '';
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
 
-      function renderList(commits, expandedHash) {
-        const list = document.getElementById("commit-list");
-        if (!commits.length) {
-          list.innerHTML =
-            '<div class="empty-state">No commits yet. Run GitPulse to start tracking.</div>';
-          return;
-        }
-        list.innerHTML = commits
-          .map((c) => renderCommitRow(c, c.hash === expandedHash))
-          .join("");
-        list.querySelectorAll(".commit-row").forEach((row) => {
-          row.addEventListener("click", (e) => {
-            if (e.target.closest(".modal-close")) return;
-            const hash = row.dataset.hash;
-            const alreadyExpanded = row.querySelector(
-              ".commit-expand:not(.hidden)"
-            );
-            document
-              .querySelectorAll(".commit-expand")
-              .forEach((el) => el.classList.add("hidden"));
-            if (!alreadyExpanded) {
-              row.querySelector(".commit-expand").classList.remove("hidden");
-            }
-            // Open modal on double-click
-            if (row._lastClick && Date.now() - row._lastClick < 400) {
-              openModal(hash);
-              row._lastClick = 0;
-              return;
-            }
-            row._lastClick = Date.now();
-          });
-        });
+    function renderList(commits, expandedHash) {
+      const list = document.getElementById('commit-list');
+      if (!commits.length) {
+        list.innerHTML = '<div class="empty-state">No commits yet. Run GitPulse to start tracking.</div>';
+        return;
       }
-
-      function openModal(hash) {
-        fetchCommit(hash).then((c) => {
-          if (!c) return;
-          document.getElementById("modal-title").textContent =
-            shortHash(c.hash) + " — " + (c.message || "(no message)");
-          const parts = [];
-          parts.push('<div class="modal-meta">');
-          parts.push("Created: " + formatDate(c.created_at));
-          if (c.group_reason)
-            parts.push(" · Group: " + escapeHtml(c.group_reason));
-          if (c.pushed && c.pushed_at)
-            parts.push(
-              " · Pushed to " +
-                (c.remote || "") +
-                "/" +
-                (c.branch || "") +
-                " at " +
-                formatDate(c.pushed_at)
-            );
-          parts.push("</div>");
-          if (c.files && c.files.length) {
-            parts.push("<p><strong>Files</strong></p>");
-            c.files.forEach((f) => {
-              parts.push(
-                "<pre>" +
-                  escapeHtml(f.path) +
-                  "\n+" +
-                  f.lines_added +
-                  " -" +
-                  f.lines_removed +
-                  " (" +
-                  (f.status || "") +
-                  ")</pre>"
-              );
-              if (f.diff) parts.push("<pre>" + escapeHtml(f.diff) + "</pre>");
-            });
+      list.innerHTML = commits.map(c => renderCommitRow(c, c.hash === expandedHash)).join('');
+      list.querySelectorAll('.commit-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('.modal-close')) return;
+          const hash = row.dataset.hash;
+          const alreadyExpanded = row.querySelector('.commit-expand:not(.hidden)');
+          document.querySelectorAll('.commit-expand').forEach(el => el.classList.add('hidden'));
+          if (!alreadyExpanded) {
+            row.querySelector('.commit-expand').classList.remove('hidden');
           }
-          document.getElementById("modal-body").innerHTML = parts.join("");
-          document.getElementById("modal").classList.remove("hidden");
+          // Open modal on double-click
+          if (row._lastClick && Date.now() - row._lastClick < 400) {
+            openModal(hash);
+            row._lastClick = 0;
+            return;
+          }
+          row._lastClick = Date.now();
         });
-      }
-      function closeModal() {
-        document.getElementById("modal").classList.add("hidden");
-      }
+      });
+    }
 
-      async function load() {
-        try {
-          const [stats, commits] = await Promise.all([
-            fetchStats(),
-            fetchHistory(),
-          ]);
-          renderStats(stats);
-          history = commits;
-          renderList(commits);
-        } catch (err) {
-          document.getElementById("commit-list").innerHTML =
-            '<div class="empty-state">Failed to load. Is the dashboard server running?</div>';
+    function openModal(hash) {
+      fetchCommit(hash).then(c => {
+        if (!c) return;
+        document.getElementById('modal-title').textContent = shortHash(c.hash) + ' — ' + (c.message || '(no message)');
+        const parts = [];
+        parts.push('<div class="modal-meta">');
+        parts.push('Created: ' + formatDate(c.created_at));
+        if (c.group_reason) parts.push(' · Group: ' + escapeHtml(c.group_reason));
+        if (c.pushed && c.pushed_at) parts.push(' · Pushed to ' + (c.remote || '') + '/' + (c.branch || '') + ' at ' + formatDate(c.pushed_at));
+        parts.push('</div>');
+        if (c.files && c.files.length) {
+          parts.push('<p><strong>Files</strong></p>');
+          c.files.forEach(f => {
+            parts.push('<pre>' + escapeHtml(f.path) + '\n+' + f.lines_added + ' -' + f.lines_removed + ' (' + (f.status || '') + ')</pre>');
+            if (f.diff) parts.push('<pre>' + escapeHtml(f.diff) + '</pre>');
+          });
         }
-      }
+        document.getElementById('modal-body').innerHTML = parts.join('');
+        document.getElementById('modal').classList.remove('hidden');
+      });
+    }
+    function closeModal() {
+      document.getElementById('modal').classList.add('hidden');
+    }
 
-      load();
-    </script>
-  </body>
+    async function load() {
+      try {
+        const [stats, commits] = await Promise.all([fetchStats(), fetchHistory()]);
+        renderStats(stats);
+        history = commits;
+        renderList(commits);
+      } catch (err) {
+        document.getElementById('commit-list').innerHTML = '<div class="empty-state">Failed to load. Is the dashboard server running?</div>';
+      }
+    }
+
+    load();
+  </script>
+</body>
 </html>
