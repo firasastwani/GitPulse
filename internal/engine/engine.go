@@ -91,5 +91,9 @@ func (e *Engine) processChanges(changeset watcher.ChangeSet) {
 	// 5. For each group: stage, commit
 	// 6. Push all commits
 	// 7. Save to store
+
+	
+
+
 	_ = changeset
 }
