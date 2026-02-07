@@ -2,12 +2,13 @@ package git
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
 	gogit "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 // Manager handles all git operations for a repository.
@@ -164,6 +165,7 @@ func (m *Manager) Commit(message string) (string, error) {
 }
 
 // Push pushes commits to the configured remote/branch.
+// Falls back to shell git push if go-git auth fails (uses system credential helper).
 func (m *Manager) Push() error {
 	err := m.repo.Push(&gogit.PushOptions{
 		RemoteName: m.remote,
@@ -171,8 +173,16 @@ func (m *Manager) Push() error {
 			config.RefSpec("refs/heads/" + m.branch + ":refs/heads/" + m.branch),
 		},
 	})
-	if err != nil {
-		return fmt.Errorf("failed to push to %s/%s: %w", m.remote, m.branch, err)
+	if err == nil {
+		return nil
+	}
+
+	// fallback to shell git push (uses system credential helper / SSH agent)
+	cmd := exec.Command("git", "push", m.remote, m.branch)
+	cmd.Dir = m.repoPath
+	output, execErr := cmd.CombinedOutput()
+	if execErr != nil {
+		return fmt.Errorf("go-git push failed: %w; git push fallback also failed: %s", err, string(output))
 	}
 
 	return nil
