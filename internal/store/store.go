@@ -227,4 +227,4 @@ func (s *Store) isEmpty() bool {
 
 func demo(s string) string {
 	return s
-}
+}	
