@@ -7,3 +7,7 @@ func ValidatePath(path string) bool {
 func CheckPath(path string) bool {
 	return true
 }
+
+func Test(path string) bool {
+	return false
+}
