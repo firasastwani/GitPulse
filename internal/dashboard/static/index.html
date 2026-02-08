@@ -48,7 +48,17 @@
       .subtitle {
         color: var(--text-muted);
         font-size: 0.9rem;
+        margin-bottom: 0.5rem;
+      }
+      .hero-summary {
+        font-size: 1.1rem;
+        color: var(--text);
         margin-bottom: 1.5rem;
+        line-height: 1.5;
+      }
+      .hero-summary .hero-highlight {
+        color: var(--accent);
+        font-weight: 600;
       }
       .cards {
         display: grid;
@@ -316,6 +326,7 @@
     <div class="container">
       <h1>GitPulse Effects</h1>
       <p class="subtitle">Impact from .gitpulse/history.json</p>
+      <p class="hero-summary" id="hero-summary">Loading impact…</p>
 
       <div class="cards">
         <div class="card">
@@ -391,6 +402,43 @@
           stats.total_lines_added;
         document.getElementById("stat-removed").textContent =
           stats.total_lines_removed;
+      }
+
+      function renderHero(stats, commits) {
+        const el = document.getElementById("hero-summary");
+        if (!commits || commits.length === 0) {
+          el.textContent =
+            "No commits yet. Run GitPulse to start tracking impact.";
+          return;
+        }
+        const today = new Date().toDateString();
+        const todayCommits = commits.filter(
+          (c) => new Date(c.created_at).toDateString() === today
+        );
+        if (todayCommits.length > 0) {
+          let added = 0,
+            removed = 0,
+            pushed = 0;
+          todayCommits.forEach((c) => {
+            (c.files || []).forEach((f) => {
+              added += f.lines_added || 0;
+              removed += f.lines_removed || 0;
+            });
+            if (c.pushed) pushed++;
+          });
+          const net = added - removed;
+          const parts = [];
+          if (net > 0) parts.push(`saved ${net} lines`);
+          else if (net < 0) parts.push(`cut ${Math.abs(net)} lines`);
+          parts.push(
+            `pushed ${pushed} of ${todayCommits.length} commits today`
+          );
+          el.innerHTML = `GitPulse <span class="hero-highlight">${parts.join(
+            " and "
+          )}</span>.`;
+        } else {
+          el.innerHTML = `GitPulse has made <span class="hero-highlight">${stats.total_commits} commits</span>, touching <span class="hero-highlight">${stats.total_files_changed} files</span> and <span class="hero-highlight">${stats.total_lines_added}+ / ${stats.total_lines_removed}- lines</span> in total.`;
+        }
       }
 
       function badges(c) {
@@ -561,6 +609,7 @@
             fetchHistory(),
           ]);
           renderStats(stats);
+          renderHero(stats, commits);
           history = commits;
           renderList(commits);
         } catch (err) {
