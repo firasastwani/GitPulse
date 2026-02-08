@@ -2,8 +2,6 @@
 
 **AI-powered auto-commit tool** — watches your files, groups changes semantically, generates conventional commit messages, runs AI code review, and commits & pushes on demand or via a safety timer.
 
-Built for hackathons and rapid development workflows.
-
 ---
 
 ## Features
@@ -22,8 +20,8 @@ Built for hackathons and rapid development workflows.
 
 ### Prerequisites
 
-- Go 1.24+
-- [Anthropic API key](https://console.anthropic.com/) — set `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY` in `.env`
+- Go
+- [Anthropic API key]— set `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY` in `.env`
 
 ### Build
 
@@ -82,7 +80,7 @@ Opens the Effects Dashboard at `http://localhost:8080` — commit history, diffs
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           Engine (orchestrator)                          │
 │  • Buffers changes from Watcher                                          │
-│  • Triggers on ENTER, SIGUSR1 (gitpulse push), or safety timer           │
+│  • Triggers on ENTER, gitpulse push, or safety timer                     │
 │  • Runs pipeline: group → AI refine → AI review → stage → commit → push  │
 └─────────────────────────────────────────────────────────────────────────┘
          │              │              │              │              │
@@ -172,15 +170,4 @@ ignore_patterns:
 
 ---
 
-## Hackathon notes
 
-- **Single binary** — `go build -o gitpulse .`; no external DB
-- **Per-repo config** — `gitpulse init` in each project; run daemon per project or use `-C`
-- **Dashboard** — `gitpulse dashboard --port 8080` to showcase commit history and AI review results
-- **API key** — Set in project `.env` or environment; `.env` is gitignored by default
-
----
-
-## License
-
-MIT
