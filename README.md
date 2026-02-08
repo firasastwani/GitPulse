@@ -1,41 +1,186 @@
-# GitPulse - AI-powered auto-commit tool
+# GitPulse
 
-## Usage (other projects / demo)
+**AI-powered auto-commit tool** — watches your files, groups changes semantically, generates conventional commit messages, runs AI code review, and commits & pushes on demand or via a safety timer.
 
-**One-time setup in any repo:**
+Built for hackathons and rapid development workflows.
+
+---
+
+## Features
+
+- **File watching** — Debounced fsnotify watcher tracks changes in real time
+- **Semantic grouping** — Heuristic clustering (directory, name affinity, file type) + Claude refinement
+- **AI commit messages** — Conventional commits format, specific and descriptive
+- **AI code review** — Pre-push review for bugs, logic errors, security issues; blocks push if blockers found
+- **Interactive review flow** — Fix manually, let AI fix, or continue anyway
+- **History & dashboard** — JSON store with diffs, line stats, review data; web dashboard to visualize work
+- **Multi-project** — Run `gitpulse init` in any repo, use `-C path` or `gitpulse push -C path` from anywhere
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Go 1.24+
+- [Anthropic API key](https://console.anthropic.com/) — set `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY` in `.env`
+
+### Build
+
+```bash
+go build -o gitpulse .
+```
+
+### One-time setup in any repo
 
 ```bash
 cd /path/to/your/project
 gitpulse init
 ```
 
-This creates `.gitpulse/config.yaml` and adds `.gitpulse/` and `.gitpulse.pid` to `.gitignore`.
+Creates `.gitpulse/config.yaml` and adds `.gitpulse/` and `.gitpulse.pid` to `.gitignore`.
 
-**Run from that directory:**
+### Run
 
 ```bash
 cd /path/to/your/project
 gitpulse
 ```
 
-**Or run from anywhere (no need to cd):**
+Or from anywhere:
 
 ```bash
 gitpulse -C /path/to/your/project
-# or
-gitpulse /path/to/your/project
 ```
 
-**Trigger commit & push** (with daemon running in that project):
+### Trigger commit & push
 
-```bash
-cd /path/to/your/project && gitpulse push
-# or from anywhere:
-gitpulse push -C /path/to/your/project
-```
+With the daemon running:
 
-**Dashboard** (view history):
+- **Same terminal:** Press ENTER
+- **Other terminal:** `gitpulse push -C /path/to/your/project`
+
+### Dashboard
 
 ```bash
 gitpulse dashboard -C /path/to/your/project --port 8080
 ```
+
+Opens the Effects Dashboard at `http://localhost:8080` — commit history, diffs, line stats, review findings.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              main.go                                     │
+│  Commands: init | push | dashboard | daemon (default)                    │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Engine (orchestrator)                          │
+│  • Buffers changes from Watcher                                          │
+│  • Triggers on ENTER, SIGUSR1 (gitpulse push), or safety timer           │
+│  • Runs pipeline: group → AI refine → AI review → stage → commit → push  │
+└─────────────────────────────────────────────────────────────────────────┘
+         │              │              │              │              │
+         ▼              ▼              ▼              ▼              ▼
+┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+│   Watcher   │ │   Grouper   │ │     AI      │ │    Git      │ │    Store    │
+│  fsnotify   │ │  heuristic  │ │   Claude    │ │  go-git +   │ │  JSON file  │
+│  debounced  │ │  clusters   │ │  refine +   │ │  shell git  │ │  history    │
+│  change set │ │  files      │ │  review +   │ │  stage,     │ │  .gitpulse/ │
+│             │ │             │ │  fix        │ │  commit,    │ │  history.   │
+│             │ │             │ │             │ │  push       │ │  json       │
+└─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘
+```
+
+### Pipeline flow
+
+1. **Watcher** — Emits `ChangeSet` (batch of file paths) after debounce delay
+2. **Grouper** — Pre-groups by directory, name affinity (e.g. `foo.go` + `foo_test.go`), singletons
+3. **Git** — Fetches real unified diffs per file (`git diff HEAD -- file`)
+4. **AI Refine** — Claude refines groupings and generates specific conventional commit messages
+5. **AI Review** — Claude reviews diffs for bugs, security issues, logic errors
+6. **Interactive gate** — If blockers: user chooses [1] Fix manually, [2] Let AI fix, [3] Continue anyway
+7. **Stage & commit** — Per group: `git add`, `git commit` with AI message
+8. **Store** — Saves enriched `CommitRecord` (files, diffs, line stats, review findings) to `.gitpulse/history.json`
+9. **Push** — `git push` if `auto_push: true`, then `MarkPushed` updates store
+
+### Package overview
+
+| Package              | Responsibility                                                                                       |
+| -------------------- | ---------------------------------------------------------------------------------------------------- |
+| `internal/watcher`   | fsnotify + debounce; emits `ChangeSet`                                                               |
+| `internal/grouper`   | Heuristic grouping: directory, name affinity, singletons                                             |
+| `internal/git`       | `GetFileDiff`, `StageFiles`, `Commit`, `Push`, `ResetStaging`                                        |
+| `internal/ai`        | Claude API: `RefineAndCommit`, `ReviewCode`, `GenerateFix` (patch-based)                             |
+| `internal/store`     | JSON append store: `Save`, `Recent`, `GetByHash`, `GetByFile`, `Stats`, `MarkPushed`                 |
+| `internal/ui`        | Logger, `ReviewFindings`, `PromptReviewAction`, `WaitForManualFix`                                   |
+| `internal/config`    | YAML + `.env`; `LoadFromDir`, `WriteDefault`                                                         |
+| `internal/dashboard` | HTTP server + embedded static UI; serves `/api/stats`, `/api/history`, `/api/commits/`, `/api/files` |
+
+---
+
+## Configuration
+
+Config is loaded from `config.yaml` or `.gitpulse/config.yaml` in the project directory. `gitpulse init` writes a default.
+
+```yaml
+watch_path: "."
+debounce_seconds: 900 # safety timer (auto-flush if you forget to push)
+auto_push: true
+remote: "origin"
+branch: "main"
+
+ai:
+  provider: "claude"
+  model: "claude-sonnet-4-5"
+  code_review: true # enable pre-push AI review
+
+ignore_patterns:
+  - "*.log"
+  - "node_modules/"
+  - ".git/"
+  - ".gitpulse/"
+```
+
+**Environment:** `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY` (from `.env` or shell).
+
+---
+
+## Data & History
+
+- **Location:** `<project>/.gitpulse/history.json`
+- **Format:** Array of `CommitRecord` — hash, message, files (with diffs, line stats), group reason, review findings, push metadata
+- **Dashboard API:**
+  - `GET /api/stats` — totals (commits, files, lines, reviews)
+  - `GET /api/history` — all commits (newest first)
+  - `GET /api/commits/<hash>` — single commit with full diff
+  - `GET /api/files?path=...` — commits touching a file
+
+---
+
+## Safety & behavior
+
+- **Safety timer** — If you don’t press ENTER or run `gitpulse push`, the timer auto-flushes after `debounce_seconds` (non-interactive, so no review prompt)
+- **Non-interactive mode** — When triggered by timer or `SIGUSR1` without a TTY, review runs but does not block; findings are logged
+- **Patch-based AI fix** — AI returns `old_code` / `new_code` JSON; only that snippet is replaced to avoid truncating large files
+- **Max review iterations** — 3 re-review loops to prevent infinite loops
+
+---
+
+## Hackathon notes
+
+- **Single binary** — `go build -o gitpulse .`; no external DB
+- **Per-repo config** — `gitpulse init` in each project; run daemon per project or use `-C`
+- **Dashboard** — `gitpulse dashboard --port 8080` to showcase commit history and AI review results
+- **API key** — Set in project `.env` or environment; `.env` is gitignored by default
+
+---
+
+## License
+
+MIT
