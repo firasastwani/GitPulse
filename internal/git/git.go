@@ -191,3 +191,4 @@ func (m *Manager) ResetStaging() error {
 
 	return nil
 }
+
