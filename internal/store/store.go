@@ -219,3 +219,12 @@ func (s *Store) flush() error {
 	}
 	return os.WriteFile(s.path, data, 0644)
 }
+
+func (s *Store) isEmpty() bool {
+	return len(s.records) == 0
+}
+
+
+func demo(s string) string {
+	return s
+}
